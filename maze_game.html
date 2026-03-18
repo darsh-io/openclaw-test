@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Maze — OpenClaw Test</title>
+<style>
+:root{--bg:#031028;--wall:#07203a;--floor:#083a5a;--player:#a8ff4c;--goal:#ffd166}
+html,body{height:100%;margin:0;background:var(--bg);font-family:system-ui,Segoe UI,Roboto}
+#game{width:100%;max-width:960px;margin:18px auto;padding:12px;background:linear-gradient(180deg,#022138, #041a2b);border-radius:8px;color:#dbeffb}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+canvas{display:block;background:var(--floor);border-radius:6px;width:100%;height:auto}
+.controls{font-size:14px;opacity:0.9}
+.info{font-family:monospace}
+button{background:#0a2540;color:#9fe0ff;border:0;padding:6px 10px;border-radius:6px;margin-left:6px}
+</style>
+</head>
+<body>
+<div id="game">
+  <header>
+    <div>
+      <h2 style="margin:0">Maze — OpenClaw Test</h2>
+      <div class="controls">Use WASD or arrow keys to move • R to regen • Q to quit</div>
+    </div>
+    <div class="info">Steps: <span id="steps">0</span> • Time: <span id="timer">0s</span></div>
+  </header>
+  <canvas id="c"></canvas>
+  <footer style="margin-top:8px;text-align:right"><button id="regen">Regenerate</button></footer>
+</div>
+<script>
+// Simple top-down maze using recursive backtracking
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let cols = 21; // must be odd
+let rows = 21; // must be odd
+let cellSize = 28;
+let maze = [];
+let player = {x:1,y:1};
+let exitPos = {x:cols-2,y:rows-2};
+let steps = 0, startTime = Date.now(), timerInterval;
+
+function resize(){
+  const maxW = Math.min(window.innerWidth-80, cols*cellSize);
+  canvas.width = cols*cellSize; canvas.height = rows*cellSize;
+}
+
+function initGrid(){
+  maze = Array(rows).fill(0).map(()=>Array(cols).fill(1));
+}
+
+function neighbors(x,y){
+  const n=[];
+  const dirs = [[0,-2],[2,0],[0,2],[-2,0]];
+  for(const [dx,dy] of dirs){
+    const nx=x+dx, ny=y+dy;
+    if(nx>0 && nx<cols-1 && ny>0 && ny<rows-1) n.push([nx,ny]);
+  }
+  return n;
+}
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
+function generate(){
+  initGrid();
+  const stack = [];
+  const sx=1, sy=1;
+  maze[sy][sx]=0; stack.push([sx,sy]);
+  while(stack.length){
+    const [cx,cy]=stack[stack.length-1];
+    let neigh = shuffle(neighbors(cx,cy)).filter(([nx,ny])=>maze[ny][nx]===1);
+    if(neigh.length===0){ stack.pop(); continue }
+    const [nx,ny]=neigh[0];
+    maze[(cy+ny)/2][(cx+nx)/2]=0; maze[ny][nx]=0; stack.push([nx,ny]);
+  }
+  player={x:1,y:1}; exitPos={x:cols-2,y:rows-2}; steps=0; startTime=Date.now();
+}
+
+function draw(){
+  resize();
+  const s = cellSize;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      if(maze[y][x]===1){ ctx.fillStyle=getShade(x,y); ctx.fillRect(x*s,y*s,s,s); }
+    }
+  }
+  // goal
+  ctx.fillStyle='var(--goal)'; ctx.fillRect(exitPos.x*s+4, exitPos.y*s+4, s-8, s-8);
+  // player
+  ctx.fillStyle='var(--player)'; ctx.beginPath(); ctx.arc(player.x*s + s/2, player.y*s + s/2, s/3, 0, Math.PI*2); ctx.fill();
+}
+
+function getShade(x,y){
+  const dx = Math.abs(x-player.x), dy = Math.abs(y-player.y);
+  const d = Math.sqrt(dx*dx+dy*dy);
+  const t = Math.min(1, d/12);
+  // interpolate between wall and darker
+  const base = [7,32,58];
+  const dark = [2,8,12];
+  const r = Math.floor(base[0]*(1-t)+dark[0]*t);
+  const g = Math.floor(base[1]*(1-t)+dark[1]*t);
+  const b = Math.floor(base[2]*(1-t)+dark[2]*t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function tryMove(dx,dy){
+  const nx=player.x+dx, ny=player.y+dy;
+  if(nx<0||ny<0||nx>=cols||ny>=rows) return;
+  if(maze[ny][nx]===0){ player.x=nx; player.y=ny; steps++; document.getElementById('steps').innerText=steps; draw(); checkWin(); }
+}
+
+function checkWin(){ if(player.x===exitPos.x && player.y===exitPos.y){ clearInterval(timerInterval); setTimeout(()=>{ if(confirm('You won in '+steps+' steps. Regenerate?')) regenerate(); },50); }}
+
+function regen(){ generate(); draw(); document.getElementById('steps').innerText=steps; clearInterval(timerInterval); startTime=Date.now(); timerInterval=setInterval(()=>{document.getElementById('timer').innerText = Math.floor((Date.now()-startTime)/1000)+'s'},500); }
+
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowUp' || e.key==='w') tryMove(0,-1);
+  if(e.key==='ArrowDown' || e.key==='s') tryMove(0,1);
+  if(e.key==='ArrowLeft' || e.key==='a') tryMove(-1,0);
+  if(e.key==='ArrowRight' || e.key==='d') tryMove(1,0);
+  if(e.key==='r' || e.key==='R') regen();
+  if(e.key==='q' || e.key==='Q') { if(confirm('Quit game?')) { window.location.href='about:blank'; } }
+});
+
+document.getElementById('regen').addEventListener('click', regen);
+
+// Responsive: reduce size on small screens
+function adapt(){ const w=window.innerWidth; if(w<500){ cols=15; rows=15; cellSize=20 } else if(w<800){ cols=19; rows=19; cellSize=24 } else { cols=21; rows=21; cellSize=28 } }
+window.addEventListener('resize',()=>{ adapt(); draw(); });
+
+// bootstrap
+adapt(); generate(); regen();
+</script>
+</body>
+</html>
